@@ -1,0 +1,21 @@
+use crate::internal::resp::RespValue;
+use crate::internal::traits::RespVisitor;
+
+pub struct CommandExecutor;
+
+impl RespVisitor for CommandExecutor {
+    fn visit_array(&mut self, array: &Vec<RespValue>) -> RespValue {
+        if array.is_empty() {
+            return RespValue::Error(String::from("Empty command array"));
+        }
+        let cmd_name = match &array[0] {
+            RespValue::BulkString(b) => String::from_utf8_lossy(b).to_uppercase(),
+            _ => return RespValue::Error(String::from("Command must be a bulk string")),
+        };
+
+        match cmd_name.as_str() {
+            "PING" => RespValue::SimpleString(String::from("PONG")),
+            _ => RespValue::Error(format!("Unknown command: {}", cmd_name)),
+        }
+    }
+}

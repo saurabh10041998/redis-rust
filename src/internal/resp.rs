@@ -1,0 +1,100 @@
+use crate::internal::traits::RespVisitor;
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RespValue {
+    SimpleString(String),
+    Error(String),
+    Integer(i64),
+    BulkString(Vec<u8>),
+    Array(Vec<RespValue>),
+    Null,
+}
+
+impl RespValue {
+    pub fn accept<V: RespVisitor>(&self, visitor: &mut V) -> RespValue {
+        match self {
+            RespValue::Array(a) => visitor.visit_array(a),
+            RespValue::BulkString(b) => visitor.visit_bulk_string(b),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+fn consume_crlf(data: &[u8], offset: &mut usize) -> Result<(), String> {
+    if data.len() < *offset + 2 || &data[*offset..*offset + 2] != b"\r\n" {
+        return Err(String::from("Missing CRLF terminator"));
+    }
+    *offset += 2;
+    Ok(())
+}
+
+fn parse_integer(data: &[u8], offset: &mut usize) -> Result<i64, String> {
+    let start = *offset;
+    while *offset < data.len() && data[*offset] != b'\r' {
+        *offset += 1;
+    }
+    let num_bytes = &data[start..*offset];
+    let num_str = std::str::from_utf8(num_bytes).map_err(|_| String::from("Invalid utf-8"))?;
+
+    let number = num_str
+        .parse::<i64>()
+        .map_err(|_| format!("Invalid integer format, {}", num_str))?;
+
+    consume_crlf(data, offset)?;
+    Ok(number)
+}
+
+fn parse_bulk_string(data: &[u8], offset: &mut usize) -> Result<RespValue, String> {
+    if data.get(*offset) != Some(&b'$') {
+        return Err(String::from("Expected bulk string prefix '$'"));
+    }
+    *offset += 1;
+    let length = parse_integer(data, offset)?;
+
+    if length < 0 {
+        return Ok(RespValue::Null);
+    }
+    let length = length as usize;
+    if data.len() < *offset + length {
+        return Err(String::from("Incomplete bulk string data"));
+    }
+    let bulk_data = data[*offset..*offset + length].to_vec();
+    *offset += length;
+    consume_crlf(data, offset)?;
+    Ok(RespValue::BulkString(bulk_data))
+}
+
+pub fn parse(data: &[u8]) -> Result<RespValue, String> {
+    let mut offset = 0;
+    match data.get(offset).ok_or("Empty data")? {
+        b'*' => {
+            offset += 1;
+            let num_elements = parse_integer(data, &mut offset)?;
+
+            if num_elements < 1 {
+                return Err(String::from("Expected a command array of length atleast 1"));
+            }
+            let mut elements = Vec::with_capacity(num_elements as usize);
+            for _ in 0..num_elements {
+                elements.push(parse(&data[offset..])?);
+            }
+            return Ok(RespValue::Array(elements));
+        }
+        b'$' => parse_bulk_string(data, &mut offset),
+        _ => Err(String::from("Unsupported or invalid RESP prefix")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn parse_ping_str() {
+        let ping_cmd = String::from("*1\r\n$4\r\nPING\r\n");
+        let ping_bytes = ping_cmd.as_bytes();
+        assert_eq!(
+            parse(ping_bytes).unwrap(),
+            RespValue::Array(vec![RespValue::BulkString(vec![80, 73, 78, 71])])
+        ); // P   I   N   G
+    }
+}
