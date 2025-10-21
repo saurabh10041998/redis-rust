@@ -2,28 +2,41 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
+mod internal;
+use crate::internal::cmd::CommandExecutor;
+use crate::internal::resp::{self, RespValue};
+
+fn execute_cmd(command: RespValue) -> RespValue {
+    let mut executor = CommandExecutor;
+    command.accept(&mut executor)
+}
+
 fn handle_client(mut stream: TcpStream) {
     let mut buffer = [0; 512];
     match stream.read(&mut buffer) {
-        Ok(bytes_read) => {
-            let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-            let request = request.trim();
-            println!("[+] Received request: {}", request);
-
-            if request == String::from("PING") {
-                let response_data = String::from("+PONG\r\n");
-                let response_bytes = response_data.as_bytes();
-
-                if let Err(e) = stream.write_all(response_bytes) {
-                    eprintln!("[!!] Failed to send response: {}", e);
+        Ok(bytes_read) if bytes_read > 0 => {
+            let raw_data = &buffer[..bytes_read];
+            match resp::parse(raw_data) {
+                Ok(command) => {
+                    println!("Parsed command: {:?}", command);
+                    let response = execute_cmd(command);
+                    let response_bytes = match response {
+                        RespValue::SimpleString(s) => format!("+{}\r\n", s).into_bytes(),
+                        RespValue::Error(e) => format!("-{}\r\n", e).into_bytes(),
+                        _ => unimplemented!(),
+                    };
+                    let _ = stream.write_all(&response_bytes);
                 }
-            } else {
-                eprintln!("[!!] I don't know how to respond to {}", request);
+                Err(e) => {
+                    eprintln!("Parsing error: {}", e);
+                    let _ = stream.write_all(format!("-ERR {}\r\n", e).as_bytes());
+                }
             }
         }
         Err(e) => {
             eprintln!("Failed to read from  socket: {}", e);
         }
+        _ => {}
     }
 }
 
