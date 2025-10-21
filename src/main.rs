@@ -12,31 +12,40 @@ fn execute_cmd(command: RespValue) -> RespValue {
 }
 
 fn handle_client(mut stream: TcpStream) {
-    let mut buffer = [0; 512];
-    match stream.read(&mut buffer) {
-        Ok(bytes_read) if bytes_read > 0 => {
-            let raw_data = &buffer[..bytes_read];
-            match resp::parse(raw_data) {
-                Ok(command) => {
-                    println!("Parsed command: {:?}", command);
-                    let response = execute_cmd(command);
-                    let response_bytes = match response {
-                        RespValue::SimpleString(s) => format!("+{}\r\n", s).into_bytes(),
-                        RespValue::Error(e) => format!("-{}\r\n", e).into_bytes(),
-                        _ => unimplemented!(),
-                    };
-                    let _ = stream.write_all(&response_bytes);
-                }
-                Err(e) => {
-                    eprintln!("Parsing error: {}", e);
-                    let _ = stream.write_all(format!("-ERR {}\r\n", e).as_bytes());
+    loop {
+        let mut buffer = [0; 512];
+        match stream.read(&mut buffer) {
+            Ok(bytes_read) if bytes_read > 0 => {
+                let raw_data = &buffer[..bytes_read];
+                match resp::parse(raw_data) {
+                    Ok(command) => {
+                        println!("Parsed command: {:?}", command);
+                        let response = execute_cmd(command);
+                        let response_bytes = match response {
+                            RespValue::SimpleString(s) => format!("+{}\r\n", s).into_bytes(),
+                            RespValue::Error(e) => format!("-{}\r\n", e).into_bytes(),
+                            _ => unimplemented!(),
+                        };
+                        let _ = stream.write_all(&response_bytes);
+                    }
+                    Err(e) => {
+                        eprintln!("Parsing error: {}", e);
+                        let _ = stream.write_all(format!("-ERR {}\r\n", e).as_bytes());
+                    }
                 }
             }
+            Err(e) => {
+                eprintln!("Failed to read from  socket: {}", e);
+                break;
+            }
+            Ok(0) => {
+                eprintln!("Client closed connection");
+                break;
+            }
+            _ => {
+                break;
+            }
         }
-        Err(e) => {
-            eprintln!("Failed to read from  socket: {}", e);
-        }
-        _ => {}
     }
 }
 
