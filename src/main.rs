@@ -7,7 +7,7 @@ use crate::internal::cmd::CommandExecutor;
 use crate::internal::resp::{self, RespValue};
 
 fn execute_cmd(command: RespValue) -> RespValue {
-    let mut executor = CommandExecutor;
+    let mut executor = CommandExecutor::new();
     command.accept(&mut executor)
 }
 
