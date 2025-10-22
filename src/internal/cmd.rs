@@ -51,6 +51,7 @@ impl RespVisitor for CommandExecutor {
                     RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
                     _ => return RespValue::Error(String::from("key must be bulkstring")),
                 };
+                println!("{:?}", self.data);
                 match self.data.get(&key) {
                     Some(val) => RespValue::BulkString(val.clone().into_bytes()),
                     None => RespValue::Null,
