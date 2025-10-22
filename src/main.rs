@@ -6,12 +6,12 @@ mod internal;
 use crate::internal::cmd::CommandExecutor;
 use crate::internal::resp::{self, RespValue};
 
-fn execute_cmd(command: RespValue) -> RespValue {
-    let mut executor = CommandExecutor::new();
-    command.accept(&mut executor)
+fn execute_cmd(command: RespValue, executor: &mut CommandExecutor) -> RespValue {
+    command.accept(executor)
 }
 
 fn handle_client(mut stream: TcpStream) {
+    let mut executor = CommandExecutor::new();
     loop {
         let mut buffer = [0; 512];
         match stream.read(&mut buffer) {
@@ -21,7 +21,7 @@ fn handle_client(mut stream: TcpStream) {
                 match resp::parse(raw_data, &mut offset) {
                     Ok(command) => {
                         println!("Parsed command: {:?}", command);
-                        let response = execute_cmd(command);
+                        let response = execute_cmd(command, &mut executor);
                         let response_bytes = format!("{}", response).into_bytes();
                         let _ = stream.write_all(&response_bytes);
                     }
