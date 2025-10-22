@@ -15,6 +15,10 @@ impl RespVisitor for CommandExecutor {
 
         match cmd_name.as_str() {
             "PING" => RespValue::SimpleString(String::from("PONG")),
+            "ECHO" => match &array[1] {
+                RespValue::BulkString(b) => RespValue::BulkString(b.clone()),
+                _ => return RespValue::Error(String::from("expected ECHO <bulkstring>")),
+            },
             _ => RespValue::Error(format!("Unknown command: {}", cmd_name)),
         }
     }

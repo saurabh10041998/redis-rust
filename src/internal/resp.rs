@@ -20,6 +20,37 @@ impl RespValue {
     }
 }
 
+impl std::fmt::Display for RespValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RespValue::SimpleString(s) => {
+                write!(f, "+{}\r\n", s)
+            }
+            RespValue::Error(e) => {
+                write!(f, "-{}\r\n", e)
+            }
+            RespValue::Integer(i) => {
+                write!(f, ":{}\r\n", i)
+            }
+            RespValue::BulkString(bytes) => {
+                write!(f, "${}\r\n", bytes.len())?;
+                let data_str = String::from_utf8_lossy(bytes);
+                write!(f, "{}\r\n", data_str)
+            }
+            RespValue::Array(elements) => {
+                write!(f, "*{}\r\n", elements.len())?;
+                for element in elements {
+                    write!(f, "{}", element)?;
+                }
+                Ok(())
+            }
+            RespValue::Null => {
+                write!(f, "$-1\r\n")
+            }
+        }
+    }
+}
+
 fn consume_crlf(data: &[u8], offset: &mut usize) -> Result<(), String> {
     if data.len() < *offset + 2 || &data[*offset..*offset + 2] != b"\r\n" {
         return Err(String::from("Missing CRLF terminator"));
@@ -64,23 +95,22 @@ fn parse_bulk_string(data: &[u8], offset: &mut usize) -> Result<RespValue, Strin
     Ok(RespValue::BulkString(bulk_data))
 }
 
-pub fn parse(data: &[u8]) -> Result<RespValue, String> {
-    let mut offset = 0;
-    match data.get(offset).ok_or("Empty data")? {
+pub fn parse(data: &[u8], offset: &mut usize) -> Result<RespValue, String> {
+    match data.get(*offset).ok_or("Empty data")? {
         b'*' => {
-            offset += 1;
-            let num_elements = parse_integer(data, &mut offset)?;
+            *offset += 1;
+            let num_elements = parse_integer(data, offset)?;
 
             if num_elements < 1 {
                 return Err(String::from("Expected a command array of length atleast 1"));
             }
             let mut elements = Vec::with_capacity(num_elements as usize);
             for _ in 0..num_elements {
-                elements.push(parse(&data[offset..])?);
+                elements.push(parse(&data, offset)?);
             }
             return Ok(RespValue::Array(elements));
         }
-        b'$' => parse_bulk_string(data, &mut offset),
+        b'$' => parse_bulk_string(data, offset),
         _ => Err(String::from("Unsupported or invalid RESP prefix")),
     }
 }
@@ -92,9 +122,24 @@ mod tests {
     fn parse_ping_str() {
         let ping_cmd = String::from("*1\r\n$4\r\nPING\r\n");
         let ping_bytes = ping_cmd.as_bytes();
+        let mut offset = 0;
         assert_eq!(
-            parse(ping_bytes).unwrap(),
+            parse(ping_bytes, &mut offset).unwrap(),
             RespValue::Array(vec![RespValue::BulkString(vec![80, 73, 78, 71])])
         ); // P   I   N   G
+    }
+
+    #[test]
+    fn parse_echo_str() {
+        let echo_cmd = String::from("*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n");
+        let echo_bytes = echo_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(echo_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![69, 67, 72, 79]),
+                RespValue::BulkString(vec![104, 101, 121])
+            ])
+        );
     }
 }

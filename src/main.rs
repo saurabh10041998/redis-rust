@@ -17,15 +17,12 @@ fn handle_client(mut stream: TcpStream) {
         match stream.read(&mut buffer) {
             Ok(bytes_read) if bytes_read > 0 => {
                 let raw_data = &buffer[..bytes_read];
-                match resp::parse(raw_data) {
+                let mut offset = 0;
+                match resp::parse(raw_data, &mut offset) {
                     Ok(command) => {
                         println!("Parsed command: {:?}", command);
                         let response = execute_cmd(command);
-                        let response_bytes = match response {
-                            RespValue::SimpleString(s) => format!("+{}\r\n", s).into_bytes(),
-                            RespValue::Error(e) => format!("-{}\r\n", e).into_bytes(),
-                            _ => unimplemented!(),
-                        };
+                        let response_bytes = format!("{}", response).into_bytes();
                         let _ = stream.write_all(&response_bytes);
                     }
                     Err(e) => {
