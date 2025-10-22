@@ -142,4 +142,33 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn parse_set_str() {
+        let set_cmd = String::from("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n");
+        let set_bytes = set_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(set_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![83, 69, 84]),
+                RespValue::BulkString(vec![102, 111, 111]),
+                RespValue::BulkString(vec![98, 97, 114])
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_get_str() {
+        let get_cmd = String::from("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n");
+        let get_bytes = get_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(get_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![71, 69, 84]),
+                RespValue::BulkString(vec![102, 111, 111]),
+            ])
+        );
+    }
 }
