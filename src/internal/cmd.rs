@@ -50,7 +50,7 @@ impl CommandExecutor {
             .or_insert(entry);
     }
 
-    pub fn rpush(&mut self, key: String, value: String, expiry_opt: Option<Expiration>) {
+    pub fn rpush(&mut self, key: String, values: Vec<String>, expiry_opt: Option<Expiration>) {
         let expiry_time = expiry_opt.map(|arg| {
             let duration = match arg {
                 Expiration::Seconds(s) => Duration::from_secs(s),
@@ -59,16 +59,18 @@ impl CommandExecutor {
             SystemTime::now() + duration
         });
 
-        self.data
-            .entry(key)
-            .and_modify(|v: &mut ValueEntry| match v.value {
-                RedisValue::List(ref mut buf) => buf.push(value.clone()),
-                _ => unreachable!("Inconsitent list format"),
-            })
-            .or_insert(ValueEntry {
-                value: RedisValue::List(vec![value]),
-                expiry_time: expiry_time,
-            });
+        for value in values {
+            self.data
+                .entry(key.clone())
+                .and_modify(|v: &mut ValueEntry| match v.value {
+                    RedisValue::List(ref mut buf) => buf.push(value.clone()),
+                    _ => unreachable!("Inconsitent list format"),
+                })
+                .or_insert(ValueEntry {
+                    value: RedisValue::List(vec![value]),
+                    expiry_time: expiry_time,
+                });
+        }
     }
 
     pub fn get(&mut self, key: String) -> Option<String> {
@@ -97,7 +99,7 @@ impl CommandExecutor {
         match self.data.get(&lst_key) {
             Some(val_entry) => match val_entry.value {
                 RedisValue::List(ref buffer) => buffer.len() as i64,
-                RedisValue::String(_) => unreachable!("rlen as expected to apply for list only"),
+                RedisValue::String(_) => unreachable!("llen is expected to apply for list only"),
             },
             None => 0,
         }
@@ -194,12 +196,20 @@ impl RespVisitor for CommandExecutor {
                     _ => return RespValue::Error(String::from("list name must be bulkstring")),
                 };
 
-                let val = match &array[2] {
-                    RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
-                    _ => return RespValue::Error(String::from("list element must be bulkstring")),
-                };
+                let mut buffer = vec![];
+                for maybe_element in array.iter().skip(2) {
+                    let element = match maybe_element {
+                        RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                        _ => {
+                            return RespValue::Error(String::from(
+                                "list element must be bulkstring",
+                            ))
+                        }
+                    };
+                    buffer.push(element);
+                }
                 let expiry_opt = None; // TODO: add support for expiry for Rpush
-                self.rpush(lst_key.clone(), val, expiry_opt);
+                self.rpush(lst_key.clone(), buffer, expiry_opt);
                 let lst_len = self.llen(lst_key);
                 RespValue::Integer(lst_len)
             }

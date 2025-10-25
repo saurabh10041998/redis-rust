@@ -205,4 +205,25 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn parse_multiple_elements_rpush_cmd() {
+        let rpush_cmd = String::from(
+            "*5\r\n$5\r\nRPUSH\r\n$12\r\nanother_list\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n",
+        );
+        let rpush_bytes = rpush_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(rpush_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![82, 80, 85, 83, 72]),
+                RespValue::BulkString(vec![
+                    97, 110, 111, 116, 104, 101, 114, 95, 108, 105, 115, 116
+                ]),
+                RespValue::BulkString(vec![102, 111, 111]),
+                RespValue::BulkString(vec![98, 97, 114]),
+                RespValue::BulkString(vec![98, 97, 122]),
+            ])
+        );
+    }
 }
