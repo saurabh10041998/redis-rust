@@ -171,4 +171,23 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn parse_set_cmd_with_expiry() {
+        let set_cmd = String::from(
+            "*5\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$5\r\nvalue\r\n$2\r\nEX\r\n$2\r\n10\r\n",
+        );
+        let set_bytes = set_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(set_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![83, 69, 84]),
+                RespValue::BulkString(vec![109, 121, 107, 101, 121]),
+                RespValue::BulkString(vec![118, 97, 108, 117, 101]),
+                RespValue::BulkString(vec![69, 88]),
+                RespValue::BulkString(vec![49, 48]),
+            ])
+        );
+    }
 }
