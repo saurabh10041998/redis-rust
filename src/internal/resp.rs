@@ -240,4 +240,18 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn parse_lpop_cmd() {
+        let lpop_cmd = String::from("*2\r\n$4\r\nLPOP\r\n$8\r\nlist_key\r\n");
+        let lpop_bytes = lpop_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(lpop_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![76, 80, 79, 80]),
+                RespValue::BulkString(vec![108, 105, 115, 116, 95, 107, 101, 121])
+            ])
+        );
+    }
 }

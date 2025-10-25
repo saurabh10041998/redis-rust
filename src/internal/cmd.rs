@@ -1,7 +1,7 @@
 use crate::internal::resp::RespValue;
 use crate::internal::traits::RespVisitor;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, SystemTime};
 
 pub enum Expiration {
@@ -12,7 +12,7 @@ pub enum Expiration {
 #[derive(Clone)]
 pub enum RedisValue {
     String(String),
-    List(Vec<String>),
+    List(VecDeque<String>),
 }
 
 #[derive(Clone)]
@@ -63,11 +63,11 @@ impl CommandExecutor {
             self.data
                 .entry(key.clone())
                 .and_modify(|v: &mut ValueEntry| match v.value {
-                    RedisValue::List(ref mut buf) => buf.push(value.clone()),
+                    RedisValue::List(ref mut buf) => buf.push_back(value.clone()),
                     _ => unreachable!("Inconsitent list format"),
                 })
                 .or_insert(ValueEntry {
-                    value: RedisValue::List(vec![value]),
+                    value: RedisValue::List(VecDeque::from([value])),
                     expiry_time: expiry_time,
                 });
         }
@@ -82,18 +82,18 @@ impl CommandExecutor {
             SystemTime::now() + duration
         });
 
-        self.data
-            .entry(key.clone())
-            .and_modify(|v: &mut ValueEntry| match v.value {
-                RedisValue::List(ref mut buf) => {
-                    buf.splice(0..0, values.clone());
-                }
-                _ => unreachable!("Inconsitent list format"),
-            })
-            .or_insert(ValueEntry {
-                value: RedisValue::List(values),
-                expiry_time: expiry_time,
-            });
+        for value in values {
+            self.data
+                .entry(key.clone())
+                .and_modify(|v: &mut ValueEntry| match v.value {
+                    RedisValue::List(ref mut buf) => buf.push_front(value.clone()),
+                    _ => unreachable!("Inconsitent list format"),
+                })
+                .or_insert(ValueEntry {
+                    value: RedisValue::List(VecDeque::from([value])),
+                    expiry_time: expiry_time,
+                });
+        }
     }
 
     pub fn get(&mut self, key: String) -> Option<String> {
@@ -165,6 +165,24 @@ impl CommandExecutor {
             None => {
                 vec![]
             }
+        }
+    }
+
+    pub fn lpop(&mut self, lst_key: String) -> Option<String> {
+        match self.data.get_mut(&lst_key) {
+            Some(ventry) => match ventry.value {
+                RedisValue::List(ref mut buffer) => {
+                    if let Some(ele) = buffer.pop_front() {
+                        Some(ele)
+                    } else {
+                        None
+                    }
+                }
+                RedisValue::String(_) => {
+                    unimplemented!("lpop not applicable for string val")
+                }
+            },
+            None => None,
         }
     }
 }
@@ -295,13 +313,19 @@ impl RespVisitor for CommandExecutor {
                     buffer.push(element);
                 }
                 let expiry_opt = None; // TODO: add support for expiry for Rpush
-                self.lpush(
-                    lst_key.clone(),
-                    buffer.into_iter().rev().collect(),
-                    expiry_opt,
-                );
+                self.lpush(lst_key.clone(), buffer, expiry_opt);
                 let lst_len = self.llen(lst_key);
                 RespValue::Integer(lst_len)
+            }
+            "LPOP" => {
+                let lst_key = match &array[1] {
+                    RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                    _ => return RespValue::Error(String::from("list name must be bulkstring")),
+                };
+                match self.lpop(lst_key) {
+                    Some(ele) => RespValue::BulkString(ele.into_bytes().to_vec()),
+                    None => RespValue::Null,
+                }
             }
             "LLEN" => {
                 let lst_key = match &array[1] {
