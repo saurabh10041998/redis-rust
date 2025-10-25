@@ -295,9 +295,21 @@ impl RespVisitor for CommandExecutor {
                     buffer.push(element);
                 }
                 let expiry_opt = None; // TODO: add support for expiry for Rpush
-                self.lpush(lst_key.clone(), buffer.into_iter().rev().collect(), expiry_opt);
+                self.lpush(
+                    lst_key.clone(),
+                    buffer.into_iter().rev().collect(),
+                    expiry_opt,
+                );
                 let lst_len = self.llen(lst_key);
                 RespValue::Integer(lst_len)
+            }
+            "LLEN" => {
+                let lst_key = match &array[1] {
+                    RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                    _ => return RespValue::Error(String::from("list name must be bulkstring")),
+                };
+                let len = self.llen(lst_key);
+                RespValue::Integer(len)
             }
             "LRANGE" => {
                 let lst_key = match &array[1] {

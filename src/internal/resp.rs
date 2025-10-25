@@ -226,4 +226,18 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn parse_llen_cmd() {
+        let llen_cmd = String::from("*2\r\n$4\r\nLLEN\r\n$7\r\nlst_key\r\n");
+        let llen_bytes = llen_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(llen_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![76, 76, 69, 78]),
+                RespValue::BulkString(vec![108, 115, 116, 95, 107, 101, 121])
+            ])
+        );
+    }
 }
