@@ -2,17 +2,17 @@ use crate::internal::resp::RespValue;
 use crate::internal::traits::RespVisitor;
 
 use std::collections::HashMap;
-use std::time::{SystemTime, Duration};
+use std::time::{Duration, SystemTime};
 
 pub enum Expiration {
     Seconds(u64),
-    Milliseconds(u64)
+    Milliseconds(u64),
 }
 
 #[derive(Clone)]
 pub struct ValueEntry {
     pub value: String,
-    pub expiry_time: Option<SystemTime>
+    pub expiry_time: Option<SystemTime>,
 }
 
 pub struct CommandExecutor {
@@ -26,29 +26,22 @@ impl CommandExecutor {
         }
     }
 
-    pub fn set(
-        &mut self,
-        key: String,
-        value: String,
-        expiry_opt: Option<Expiration>
-    ) {
+    pub fn set(&mut self, key: String, value: String, expiry_opt: Option<Expiration>) {
         let expiry_time = expiry_opt.map(|arg| {
             let duration = match arg {
                 Expiration::Seconds(s) => Duration::from_secs(s),
-                Expiration::Milliseconds(s) => Duration::from_millis(s )
+                Expiration::Milliseconds(s) => Duration::from_millis(s),
             };
             SystemTime::now() + duration
         });
         let entry = ValueEntry { value, expiry_time };
-        self.data.entry(key)
+        self.data
+            .entry(key)
             .and_modify(|v: &mut ValueEntry| *v = entry.clone())
             .or_insert(entry);
     }
 
-    pub fn get(
-        &mut self,
-        key: String
-    ) -> Option<String> {
+    pub fn get(&mut self, key: String) -> Option<String> {
         let current_time = SystemTime::now();
 
         if let Some(entry) = self.data.get(&key) {
@@ -93,7 +86,7 @@ impl RespVisitor for CommandExecutor {
                 if let Some(exp) = &array.get(3) {
                     let opt = match exp {
                         RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
-                        _ => return RespValue::Error(String::from("Either EX/PX expected"))
+                        _ => return RespValue::Error(String::from("Either EX/PX expected")),
                     };
                     match opt.as_str() {
                         "EX" => {
@@ -102,32 +95,37 @@ impl RespVisitor for CommandExecutor {
                                     RespValue::BulkString(b) => {
                                         let ts = String::from_utf8_lossy(b).into_owned();
                                         ts.parse::<u64>().expect("Invalid int")
-                                    },
-                                    _ => return RespValue::Error(String::from("timeval must be bulkstring"))
+                                    }
+                                    _ => {
+                                        return RespValue::Error(String::from(
+                                            "timeval must be bulkstring",
+                                        ))
+                                    }
                                 };
                                 expiry_opt = Some(Expiration::Seconds(tsec));
                             } else {
-                                return RespValue::Error(String::from("EX <timeout-in-sec>"))
+                                return RespValue::Error(String::from("EX <timeout-in-sec>"));
                             }
-                        },
+                        }
                         "PX" => {
                             if let Some(tmsec_s) = &array.get(4) {
                                 let tmsec = match tmsec_s {
                                     RespValue::BulkString(b) => {
                                         let ts = String::from_utf8_lossy(b).into_owned();
                                         ts.parse::<u64>().expect("Invalid int")
-                                    },
-                                    _ => return RespValue::Error(String::from("timeval must be bulkstring"))
+                                    }
+                                    _ => {
+                                        return RespValue::Error(String::from(
+                                            "timeval must be bulkstring",
+                                        ))
+                                    }
                                 };
                                 expiry_opt = Some(Expiration::Milliseconds(tmsec));
-
                             } else {
-                                return RespValue::Error(String::from("PX <timeout-in-msec>"))
+                                return RespValue::Error(String::from("PX <timeout-in-msec>"));
                             }
-                        },
-                        _ => {
-                            return RespValue::Error(String::from("Either EX/PX supported"))
                         }
+                        _ => return RespValue::Error(String::from("Either EX/PX supported")),
                     }
                 }
                 self.set(key, val, expiry_opt);
