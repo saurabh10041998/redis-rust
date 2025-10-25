@@ -104,6 +104,46 @@ impl CommandExecutor {
             None => 0,
         }
     }
+
+    pub fn lrange(&self, lst_key: String, start: isize, end: isize) -> Vec<String> {
+        match self.data.get(&lst_key) {
+            Some(ventry) => match ventry.value {
+                RedisValue::List(ref buffer) => {
+                    let len = buffer.len() as isize;
+                    let start_idx = if start < 0 {
+                        isize::max(0, len + start)
+                    } else {
+                        isize::min(len, start)
+                    };
+
+                    let end_idx = if end < 0 {
+                        isize::max(0, len + end)
+                    } else {
+                        isize::min(len, end)
+                    };
+
+                    if start_idx > end_idx {
+                        return vec![];
+                    }
+
+                    let start_idx = start_idx as usize;
+                    let end_idx = end_idx as usize;
+
+                    let mut bucket = vec![];
+                    for idx in start_idx..=end_idx {
+                        bucket.push(buffer[idx].clone());
+                    }
+                    bucket
+                }
+                RedisValue::String(_) => {
+                    unimplemented!("lrange is not supported for string val");
+                }
+            },
+            None => {
+                vec![]
+            }
+        }
+    }
 }
 
 impl RespVisitor for CommandExecutor {
@@ -212,6 +252,32 @@ impl RespVisitor for CommandExecutor {
                 self.rpush(lst_key.clone(), buffer, expiry_opt);
                 let lst_len = self.llen(lst_key);
                 RespValue::Integer(lst_len)
+            }
+            "LRANGE" => {
+                let lst_key = match &array[1] {
+                    RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                    _ => return RespValue::Error(String::from("list name must be bulkstring")),
+                };
+                let start_idx = match &array[2] {
+                    RespValue::BulkString(b) => {
+                        let s_idx = String::from_utf8_lossy(b).into_owned();
+                        s_idx.parse::<isize>().expect("invalid start index")
+                    }
+                    _ => return RespValue::Error(String::from("start_idx must be bulk string")),
+                };
+                let end_idx = match &array[2] {
+                    RespValue::BulkString(b) => {
+                        let e_idx = String::from_utf8_lossy(b).into_owned();
+                        e_idx.parse::<isize>().expect("invalid start index")
+                    }
+                    _ => return RespValue::Error(String::from("start_idx must be bulk string")),
+                };
+                let buffer = self.lrange(lst_key, start_idx, end_idx);
+                let mut bucket = vec![];
+                for ele in buffer {
+                    bucket.push(RespValue::BulkString(ele.into_bytes().to_vec()));
+                }
+                RespValue::Array(bucket)
             }
             _ => RespValue::Error(format!("Unknown command: {}", cmd_name)),
         }
