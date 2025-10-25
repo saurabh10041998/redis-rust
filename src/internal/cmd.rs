@@ -113,13 +113,13 @@ impl CommandExecutor {
                     let start_idx = if start < 0 {
                         isize::max(0, len + start)
                     } else {
-                        isize::min(len, start)
+                        isize::min(len - 1, start)
                     };
 
                     let end_idx = if end < 0 {
                         isize::max(0, len + end)
                     } else {
-                        isize::min(len, end)
+                        isize::min(len - 1, end)
                     };
 
                     if start_idx > end_idx {
