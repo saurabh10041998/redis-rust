@@ -73,6 +73,29 @@ impl CommandExecutor {
         }
     }
 
+    pub fn lpush(&mut self, key: String, values: Vec<String>, expiry_opt: Option<Expiration>) {
+        let expiry_time = expiry_opt.map(|arg| {
+            let duration = match arg {
+                Expiration::Seconds(s) => Duration::from_secs(s),
+                Expiration::Milliseconds(s) => Duration::from_millis(s),
+            };
+            SystemTime::now() + duration
+        });
+
+        self.data
+            .entry(key.clone())
+            .and_modify(|v: &mut ValueEntry| match v.value {
+                RedisValue::List(ref mut buf) => {
+                    buf.splice(0..0, values.clone());
+                }
+                _ => unreachable!("Inconsitent list format"),
+            })
+            .or_insert(ValueEntry {
+                value: RedisValue::List(values),
+                expiry_time: expiry_time,
+            });
+    }
+
     pub fn get(&mut self, key: String) -> Option<String> {
         let current_time = SystemTime::now();
 
@@ -250,6 +273,29 @@ impl RespVisitor for CommandExecutor {
                 }
                 let expiry_opt = None; // TODO: add support for expiry for Rpush
                 self.rpush(lst_key.clone(), buffer, expiry_opt);
+                let lst_len = self.llen(lst_key);
+                RespValue::Integer(lst_len)
+            }
+            "LPUSH" => {
+                let lst_key = match &array[1] {
+                    RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                    _ => return RespValue::Error(String::from("list name must be bulkstring")),
+                };
+
+                let mut buffer = vec![];
+                for maybe_element in array.iter().skip(2) {
+                    let element = match maybe_element {
+                        RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                        _ => {
+                            return RespValue::Error(String::from(
+                                "list element must be bulkstring",
+                            ))
+                        }
+                    };
+                    buffer.push(element);
+                }
+                let expiry_opt = None; // TODO: add support for expiry for Rpush
+                self.lpush(lst_key.clone(), buffer, expiry_opt);
                 let lst_len = self.llen(lst_key);
                 RespValue::Integer(lst_len)
             }
