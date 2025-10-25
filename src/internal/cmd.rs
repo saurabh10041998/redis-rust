@@ -265,10 +265,10 @@ impl RespVisitor for CommandExecutor {
                     }
                     _ => return RespValue::Error(String::from("start_idx must be bulk string")),
                 };
-                let end_idx = match &array[2] {
+                let end_idx = match &array[3] {
                     RespValue::BulkString(b) => {
                         let e_idx = String::from_utf8_lossy(b).into_owned();
-                        e_idx.parse::<isize>().expect("invalid start index")
+                        e_idx.parse::<isize>().expect("invalid end index")
                     }
                     _ => return RespValue::Error(String::from("start_idx must be bulk string")),
                 };
