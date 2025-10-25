@@ -190,4 +190,19 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn parse_rpush_cmd() {
+        let rpush_cmd = String::from("*3\r\n$5\r\nRPUSH\r\n$8\r\nlist_key\r\n$3\r\nfoo\r\n");
+        let rpush_bytes = rpush_cmd.as_bytes();
+        let mut offset = 0;
+        assert_eq!(
+            parse(rpush_bytes, &mut offset).unwrap(),
+            RespValue::Array(vec![
+                RespValue::BulkString(vec![82, 80, 85, 83, 72]),
+                RespValue::BulkString(vec![108, 105, 115, 116, 95, 107, 101, 121]),
+                RespValue::BulkString(vec![102, 111, 111]),
+            ])
+        );
+    }
 }

@@ -10,8 +10,14 @@ pub enum Expiration {
 }
 
 #[derive(Clone)]
+pub enum RedisValue {
+    String(String),
+    List(Vec<String>),
+}
+
+#[derive(Clone)]
 pub struct ValueEntry {
-    pub value: String,
+    pub value: RedisValue,
     pub expiry_time: Option<SystemTime>,
 }
 
@@ -34,11 +40,35 @@ impl CommandExecutor {
             };
             SystemTime::now() + duration
         });
-        let entry = ValueEntry { value, expiry_time };
+        let entry = ValueEntry {
+            value: RedisValue::String(value),
+            expiry_time,
+        };
         self.data
             .entry(key)
             .and_modify(|v: &mut ValueEntry| *v = entry.clone())
             .or_insert(entry);
+    }
+
+    pub fn rpush(&mut self, key: String, value: String, expiry_opt: Option<Expiration>) {
+        let expiry_time = expiry_opt.map(|arg| {
+            let duration = match arg {
+                Expiration::Seconds(s) => Duration::from_secs(s),
+                Expiration::Milliseconds(s) => Duration::from_millis(s),
+            };
+            SystemTime::now() + duration
+        });
+
+        self.data
+            .entry(key)
+            .and_modify(|v: &mut ValueEntry| match v.value {
+                RedisValue::List(ref mut buf) => buf.push(value.clone()),
+                _ => unreachable!("Inconsitent list format"),
+            })
+            .or_insert(ValueEntry {
+                value: RedisValue::List(vec![value]),
+                expiry_time: expiry_time,
+            });
     }
 
     pub fn get(&mut self, key: String) -> Option<String> {
@@ -51,9 +81,26 @@ impl CommandExecutor {
                     return None;
                 }
             }
-            return Some(entry.value.clone());
+            match entry.value {
+                RedisValue::String(ref val) => {
+                    return Some(val.clone());
+                }
+                RedisValue::List(_) => {
+                    unimplemented!()
+                }
+            };
         }
         None
+    }
+
+    pub fn llen(&self, lst_key: String) -> i64 {
+        match self.data.get(&lst_key) {
+            Some(val_entry) => match val_entry.value {
+                RedisValue::List(ref buffer) => buffer.len() as i64,
+                RedisValue::String(_) => unreachable!("rlen as expected to apply for list only"),
+            },
+            None => 0,
+        }
     }
 }
 
@@ -140,6 +187,21 @@ impl RespVisitor for CommandExecutor {
                     Some(val) => RespValue::BulkString(val.clone().into_bytes()),
                     None => RespValue::Null,
                 }
+            }
+            "RPUSH" => {
+                let lst_key = match &array[1] {
+                    RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                    _ => return RespValue::Error(String::from("list name must be bulkstring")),
+                };
+
+                let val = match &array[2] {
+                    RespValue::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+                    _ => return RespValue::Error(String::from("list element must be bulkstring")),
+                };
+                let expiry_opt = None; // TODO: add support for expiry for Rpush
+                self.rpush(lst_key.clone(), val, expiry_opt);
+                let lst_len = self.llen(lst_key);
+                RespValue::Integer(lst_len)
             }
             _ => RespValue::Error(format!("Unknown command: {}", cmd_name)),
         }
